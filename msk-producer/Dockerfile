@@ -1,6 +1,5 @@
 FROM golang:1.16-buster AS build
-# go env can be removed later
-RUN go env -w GOPROXY=direct
+#RUN go env -w GOPROXY=direct
 
 WORKDIR /app
 COPY go.mod ./
