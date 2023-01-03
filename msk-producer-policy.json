@@ -1,0 +1,17 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:Connect",
+                "kafka-cluster:*Topic*",
+                "kafka-cluster:WriteData"
+            ],
+            "Resource": [
+                "<enter MSK Serverless cluster ARN>",
+                "arn:aws:kafka:<enter AWS region e.g. us-east-1>:<enter AWS account ID>:topic/<enter MSK Serverless cluster name>/*"
+            ]
+        }
+    ]
+}

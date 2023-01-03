@@ -1,0 +1,313 @@
+Description: (SO0151labs) - Amazon MSK Labs (EC2 Client). Version v1.6.0
+AWSTemplateFormatVersion: 2010-09-09
+Metadata:
+  'AWS::CloudFormation::Interface':
+    ParameterGroups:
+      - Label:
+          default: Amazon EC2 client configuration
+        Parameters:
+          - KeyPair
+          - LatestAmiId
+          - UserDataLocation
+          - SetupScript
+          - RoleName
+    ParameterLabels:
+      KeyPair:
+        default: Name of an existing key pair to enable SSH access to the instance
+      LatestAmiId:
+        default: Amazon Machine Image for the instance
+      UserDataLocation:
+        default: >-
+          Git repository where the user data configuration is stored (default
+          branch will be used)
+      SetupScript:
+        default: Path of the shell script to be executed when the instance launches
+      RoleName:
+        default: Name of an existing IAM role to associate with the instance
+Parameters:
+  LatestAmiId:
+    Type: 'AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>'
+    Default: /aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2
+  UserDataLocation:
+    Type: String
+    Default: 'https://github.com/aws-samples/lab-resources-for-amazon-msk'
+  SetupScript:
+    Type: String
+    Default: ./setup.sh
+Mappings:
+  SubnetConfig:
+    VPC:
+      CIDR: 10.0.0.0/16
+    PublicOne:
+      CIDR: 10.0.0.0/24
+    PrivateSubnetMSKOne:
+      CIDR: 10.0.1.0/24
+    PrivateSubnetMSKTwo:
+      CIDR: 10.0.2.0/24
+    PrivateSubnetMSKThree:
+      CIDR: 10.0.3.0/24
+  SolutionHelperAnonymousData14B64A81:
+    SendAnonymousData:
+      Data: 'Yes'
+Resources:
+  VPC:
+    Type: 'AWS::EC2::VPC'
+    Properties:
+      CidrBlock: !FindInMap 
+        - SubnetConfig
+        - VPC
+        - CIDR
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: MSKVPC
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W60
+            reason: No flow log required for this VPC
+  PublicSubnetOne:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap 
+        - SubnetConfig
+        - PublicOne
+        - CIDR
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: PublicSubnet
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W33
+            reason: >-
+              This is a public subnet and MapPublicIpOnLaunch should be set to
+              true
+  PrivateSubnetMSKOne:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap 
+        - SubnetConfig
+        - PrivateSubnetMSKOne
+        - CIDR
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 0
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetMSKOne
+  PrivateSubnetMSKTwo:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap 
+        - SubnetConfig
+        - PrivateSubnetMSKTwo
+        - CIDR
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 1
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetMSKTwo
+  PrivateSubnetMSKThree:
+    Type: 'AWS::EC2::Subnet'
+    Properties:
+      CidrBlock: !FindInMap 
+        - SubnetConfig
+        - PrivateSubnetMSKThree
+        - CIDR
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select 
+        - 2
+        - !GetAZs 
+          Ref: 'AWS::Region'
+      MapPublicIpOnLaunch: false
+      Tags:
+        - Key: Name
+          Value: PrivateSubnetMSKThree
+  InternetGateway:
+    Type: 'AWS::EC2::InternetGateway'
+  GatewayAttachement:
+    Type: 'AWS::EC2::VPCGatewayAttachment'
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+  NATEIP:
+    Type: 'AWS::EC2::EIP'
+    Properties:
+      Domain: vpc
+    DependsOn:
+      - GatewayAttachement
+  NATGateway:
+    Type: 'AWS::EC2::NatGateway'
+    Properties:
+      SubnetId: !Ref PublicSubnetOne
+      AllocationId: !GetAtt NATEIP.AllocationId
+      Tags:
+        - Key: Name
+          Value: ConfluentKafkaNATGateway
+  PublicRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+  PublicRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+    DependsOn:
+      - GatewayAttachement
+  PublicSubnetOneRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnetOne
+  PrivateRouteTable:
+    Type: 'AWS::EC2::RouteTable'
+    Properties:
+      VpcId: !Ref VPC
+  PrivateRoute:
+    Type: 'AWS::EC2::Route'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      NatGatewayId: !Ref NATGateway
+  PrivateSubnetMSKOneRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetMSKOne
+  PrivateSubnetMSKTwoRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetMSKTwo
+  PrivateSubnetMSKThreeRouteTableAssociation:
+    Type: 'AWS::EC2::SubnetRouteTableAssociation'
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      SubnetId: !Ref PrivateSubnetMSKThree
+
+Outputs:
+  VPCId:
+    Description: The ID of the VPC created
+    Value: !Ref VPC
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCID'
+  PublicSubnetOne:
+    Description: The name of the public subnet created
+    Value: !Ref PublicSubnetOne
+    Export:
+      Name: !Sub '${AWS::StackName}-PublicSubnetOne'
+  PrivateSubnetMSKOne:
+    Description: The ID of private subnet one created
+    Value: !Ref PrivateSubnetMSKOne
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetMSKOne'
+  PrivateSubnetMSKTwo:
+    Description: The ID of private subnet two created
+    Value: !Ref PrivateSubnetMSKTwo
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetMSKTwo'
+  PrivateSubnetMSKThree:
+    Description: The ID of private subnet three created
+    Value: !Ref PrivateSubnetMSKThree
+    Export:
+      Name: !Sub '${AWS::StackName}-PrivateSubnetMSKThree'
+  VPCStackName:
+    Description: The name of the VPC Stack
+    Value: !Ref 'AWS::StackName'
+    Export:
+      Name: !Sub '${AWS::StackName}-VPCStackName'
+
+Conditions:
+  SolutionHelperAnonymousDatatoAWSD898118F: !Equals 
+    - !FindInMap 
+      - SolutionHelperAnonymousData14B64A81
+      - SendAnonymousData
+      - Data
+    - 'Yes'
+  CDKMetadataAvailable: !Or 
+    - !Or 
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - af-south-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ap-east-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ap-northeast-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ap-northeast-2
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ap-south-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ap-southeast-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ap-southeast-2
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - ca-central-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - cn-north-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - cn-northwest-1
+    - !Or 
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - eu-central-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - eu-north-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - eu-south-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - eu-west-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - eu-west-2
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - eu-west-3
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - me-south-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - sa-east-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - us-east-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - us-east-2
+    - !Or 
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - us-west-1
+      - !Equals 
+        - !Ref 'AWS::Region'
+        - us-west-2

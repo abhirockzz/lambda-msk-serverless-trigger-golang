@@ -1,0 +1,21 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "VisualEditor0",
+            "Effect": "Allow",
+            "Action": [
+                "kafka-cluster:AlterGroup",
+                "kafka-cluster:ReadData",
+                "kafka-cluster:DescribeTopic",
+                "kafka-cluster:DescribeGroup",
+                "kafka-cluster:Connect"
+            ],
+            "Resource": [
+                "arn:aws:kafka:*:<enter AWS account ID>:topic/<enter MSK Serverless cluster name>/*",
+                "<enter MSK Serverless cluster ARN>",
+                "arn:aws:kafka:*:<enter AWS account ID>:group/<enter MSK Serverless cluster name>/*"
+            ]
+        }
+    ]
+}
